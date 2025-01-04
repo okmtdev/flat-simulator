@@ -1,0 +1,24 @@
+substitutions:
+  _VERSION: "v0.1"
+  _PROJECT_ID: "okmtdev-a820d"
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t",
+        "gcr.io/${_PROJECT_ID}/flat-simulator:${_VERSION}",
+        "-f",
+        "Dockerfile",
+        ".",
+      ]
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "tag",
+        "gcr.io/${_PROJECT_ID}/flat-simulator:${_VERSION}",
+        "gcr.io/${_PROJECT_ID}/flat-simulator:latest",
+      ]
+images:
+  - "gcr.io/${_PROJECT_ID}/flat-simulator:${_VERSION}"
+  - "gcr.io/${_PROJECT_ID}/flat-simulator:latest"
