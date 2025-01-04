@@ -19,6 +19,9 @@ function LoanCalculator() {
   const [repaymentType, setRepaymentType] = useState("equal-principal");
   const [paymentSchedule, setPaymentSchedule] = useState([]);
 
+  const [interestRateType, setInterestRateType] = useState("fixed");
+  const [interestRatePattern, setInterestRatePattern] = useState("maintain");
+
   function calculateEqualPrincipalRepayment(
     principal,
     monthlyInterestRate,
@@ -40,7 +43,6 @@ function LoanCalculator() {
         month,
         year: Math.ceil(month / 12),
         totalPayment,
-        principalPayment,
         interestPayment,
         remainingBalance,
         totalRepaid,
@@ -73,7 +75,6 @@ function LoanCalculator() {
         month,
         year: Math.ceil(month / 12),
         totalPayment,
-        principalPayment,
         interestPayment,
         remainingBalance,
         totalRepaid,
@@ -83,24 +84,94 @@ function LoanCalculator() {
     return schedule;
   }
 
+  function calculateMonthlyInterestRate(annualRate, month, pattern) {
+    switch (pattern) {
+      case "maintain":
+        return annualRate / 12;
+      case "mini":
+        // 年間 0.05%ペース
+        return (annualRate + ((month - 1) / 12) * 0.0005) / 12;
+      case "minor":
+        // 年間 0.10%ペース
+        return (annualRate + ((month - 1) / 12) * 0.001) / 12;
+      case "incremental":
+        // 年間 0.25%ペース
+        return (annualRate + ((month - 1) / 12) * 0.0025) / 12;
+      case "maximum":
+        // 年間 0.5%ペース
+        return (annualRate + ((month - 1) / 12) * 0.005) / 12;
+      default:
+        return annualRate / 12;
+    }
+  }
+
   function calculateRepaymentSchedule() {
     const principal = parseFloat(loanAmount) * 10000;
     const monthlyInterestRate = parseFloat(interestRate) / 100 / 12;
     const totalPayments = parseInt(loanDuration) * 12;
 
     let schedule = [];
-    if (repaymentType === "equal-principal") {
-      schedule = calculateEqualPrincipalRepayment(
-        principal,
-        monthlyInterestRate,
-        totalPayments
-      );
+    let remainingBalance = principal;
+    let totalRepaid = 0;
+    if (interestRateType === "variable") {
+      // 変動金利の場合
+      const lifetimeCap = 0.05;
+      let adjustedInterestRate = parseFloat(interestRate) / 100;
+      let cappedInterestRate = adjustedInterestRate + lifetimeCap;
+      for (let month = 1; month <= totalPayments; month++) {
+        let monthlyInterestRate = calculateMonthlyInterestRate(
+          adjustedInterestRate,
+          month,
+          interestRatePattern
+        );
+        monthlyInterestRate = Math.min(
+          monthlyInterestRate,
+          cappedInterestRate / 12
+        );
+        let totalPayment, principalPayment, interestPayment;
+        if (repaymentType === "equal-principal") {
+          principalPayment = principal / totalPayments;
+          interestPayment = remainingBalance * monthlyInterestRate;
+          totalPayment = principalPayment + interestPayment;
+        } else {
+          // "equal-total" の場合
+          if (month === 1) {
+            totalPayment = calculateEqualTotalPayment(
+              principal,
+              monthlyInterestRate,
+              totalPayments
+            );
+          }
+          interestPayment = remainingBalance * monthlyInterestRate;
+          principalPayment = totalPayment - interestPayment;
+        }
+
+        totalRepaid += totalPayment;
+        remainingBalance -= principalPayment;
+
+        schedule.push({
+          month,
+          year: Math.ceil(month / 12),
+          totalPayment,
+          interestPayment,
+          remainingBalance,
+          totalRepaid,
+        });
+      }
     } else {
-      schedule = calculateEqualTotalRepayment(
-        principal,
-        monthlyInterestRate,
-        totalPayments
-      );
+      if (repaymentType === "equal-principal") {
+        schedule = calculateEqualPrincipalRepayment(
+          principal,
+          monthlyInterestRate,
+          totalPayments
+        );
+      } else {
+        schedule = calculateEqualTotalRepayment(
+          principal,
+          monthlyInterestRate,
+          totalPayments
+        );
+      }
     }
 
     setPaymentSchedule(schedule);
@@ -115,18 +186,26 @@ function LoanCalculator() {
     return `${Math.floor(value / 10000)}`;
   };
 
-  // 総返済金額を計算する関数
   const calculateTotalRepaid = (schedule) => {
     return schedule.reduce((acc, cur) => acc + cur.totalPayment, 0);
   };
 
-  // 総返済金額をフォーマットして表示する関数
+  function calculateEqualTotalPayment(
+    principal,
+    monthlyInterestRate,
+    totalPayments
+  ) {
+    return (
+      (principal * monthlyInterestRate) /
+      (1 - Math.pow(1 + monthlyInterestRate, -totalPayments))
+    );
+  }
+
   const displayTotalRepaid = () => {
     const totalRepaid = calculateTotalRepaid(paymentSchedule);
     return formatToMan(totalRepaid);
   };
 
-  // 最大年数を取得する関数
   const getMaxYear = (schedule) => {
     if (schedule.length === 0) return [];
     const lastEntry = schedule[schedule.length - 1];
@@ -145,6 +224,10 @@ function LoanCalculator() {
           setInterestRate={setInterestRate}
           repaymentType={repaymentType}
           setRepaymentType={setRepaymentType}
+          interestRateType={interestRateType}
+          setInterestRateType={setInterestRateType}
+          interestRatePattern={interestRatePattern}
+          setInterestRatePattern={setInterestRatePattern}
           handleSubmit={handleSubmit}
         />
         <div className="total-repaid-container">
@@ -176,7 +259,7 @@ function LoanCalculator() {
           <Line
             type="monotone"
             dataKey="remainingBalance"
-            name="残返済金額"
+            name="残元金"
             stroke="#82ca9d"
           />
           <Line
@@ -185,20 +268,6 @@ function LoanCalculator() {
             name="累計返済額"
             stroke="#8884d8"
           />
-          {/*
-        <Line
-          type="monotone"
-          dataKey="principalPayment"
-          name="元本返済額"
-          stroke="#82ca9d"
-        />
-        <Line
-          type="monotone"
-          dataKey="interestPayment"
-          name="利息返済額"
-          stroke="#ffc658"
-        />
-        */}
         </LineChart>
       </div>
       <div className="payment-info-container">
